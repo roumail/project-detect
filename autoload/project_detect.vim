@@ -29,6 +29,11 @@ function! project_detect#active() abort
   return s:active
 endfunction
 
+" The project name (g:project_name), or '' when no strategy matched
+function! project_detect#name() abort
+  return empty(s:active) ? '' : get(g:, 'project_name', '')
+endfunction
+
 " Sets g:project_name from the first matching strategy and fires
 " User ProjectDetected. A g:project_name that is already set is kept, so it
 " can be overridden per project.

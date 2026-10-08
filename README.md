@@ -30,8 +30,9 @@ call project_detect#register('python', {'detect': function('s:pyproject_name')})
 
 | Result | |
 | --- | --- |
-| `g:project_name` | The detected name. Set it yourself beforehand to override the name only. |
+| `project_detect#name()` | The detected name, or `''`. Other plugins read the name through this. |
 | `project_detect#active()` | The matching strategy (`'python'` above), or `''`. |
+| `g:project_name` | Where the name is stored. Set it yourself beforehand to override the name only. |
 | `project_detect#strategies()` | Registered strategy names, in detection order. |
 | `User ProjectDetected` | Fired after a strategy matches. |
 
