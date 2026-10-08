@@ -2,7 +2,7 @@
 
 Names the current project, using detection strategies you register. It ships
 no strategies of its own and depends on nothing; other plugins (such as
-[fzf-utils-grepscope](https://github.com/roumail/fzf-utils-grepscope)) read the
+[grepscope](https://github.com/roumail/grepscope)) read the
 result.
 
 ```vim
