@@ -1,51 +1,69 @@
 # project-detect
 
-Names the current project, using detection strategies you register. It ships
-no strategies of its own and depends on nothing; other plugins (such as
-[grepscope](https://github.com/roumail/grepscope)) read the
-result.
+Recognises the project Vim is started in and describes it: its type, name,
+root, and where its code and tests live. Other plugins (such as
+[grepscope](https://github.com/roumail/grepscope)) read the description. It
+depends on nothing.
 
-```vim
-" Python: the project is named in the pyproject.toml at the project root
-function! s:pyproject_name() abort
-  let l:file = findfile('pyproject.toml', escape(getcwd(), ' ,\') . ';')
-  if empty(l:file)
-    return ''
-  endif
-  for l:line in readfile(l:file)
-    if l:line =~ '^name\s*='
-      return matchstr(l:line, '"\zs[^"]\+\ze"')
-    endif
-  endfor
-  return ''
-endfunction
+Python and Go projects are recognised out of the box:
 
-call project_detect#register('python', {'detect': function('s:pyproject_name')})
-```
+| Type | Recognised by | Name | Code | Tests |
+| --- | --- | --- | --- | --- |
+| `python` | `pyproject.toml` | `name` in `[project]` or `[tool.poetry]` | the import package: `src/<pkg>/` or `<pkg>/` | `tests/`, `test/` |
+| `go` | `go.mod` | last element of the module path, without a `/vN` suffix | the whole module | `*_test.go` |
 
-- `detect()` returns the project name, or `''` when this is not such a project.
-- At startup (`VimEnter`) strategies are tried in registration order and the
-  first that returns a name wins. A strategy registered later triggers a new
-  attempt if nothing matched yet.
+The marker file is looked up from the working directory upwards, so Vim can be
+started anywhere inside the project, for example in a Go module's `cmd/app`.
 
 ## The project is the working directory
 
-Start Vim at the project root: the project is the directory Vim starts in,
-detected once at startup. Opening files elsewhere, or files that belong to
-another project, does not change it.
-
-Strategies should therefore search from `getcwd()`, not from the current buffer
-(`'.;'`, `expand('%')`). At `VimEnter` the current buffer can be anything:
-netrw, or fugitive's status window after `vim . -c Git`, where a search relative
-to the buffer finds nothing.
+The project is detected once, at startup (`VimEnter`), from the directory Vim
+starts in. Opening files elsewhere, or files that belong to another project,
+does not change it.
 
 | Result | |
 | --- | --- |
-| `project_detect#name()` | The detected name, or `''`. Other plugins read the name through this. |
-| `project_detect#active()` | The matching strategy (`'python'` above), or `''`. |
+| `project_detect#active()` | The project type (`'python'`, `'go'`), or `''`. |
+| `project_detect#name()` | The project name, or `''`. |
+| `project_detect#root()` | The project root directory. |
+| `project_detect#sources()` | Where the code lives, relative to the root. |
+| `project_detect#tests()` | Where the tests live, relative to the root. |
 | `g:project_name` | Where the name is stored. Set it yourself beforehand to override the name only. |
-| `project_detect#strategies()` | Registered strategy names, in detection order. |
+| `project_detect#strategies()` | Strategy names, in detection order. |
 | `User ProjectDetected` | Fired after a strategy matches. |
+
+In `sources()` and `tests()`, entries ending in `/` are directories; the rest
+are file-name globs.
+
+## More project types
+
+A strategy recognises one type of project. Register your own for other
+layouts, or under `'python'` / `'go'` to replace a built-in one:
+
+```vim
+" Python packages that only have a setup.cfg
+function! s:setup_cfg() abort
+  let l:file = findfile('setup.cfg', escape(getcwd(), ' ,\') . ';')
+  if empty(l:file)
+    return ''
+  endif
+  let l:name = matchstr(join(readfile(l:file), "\n"), '\n\s*name\s*=\s*\zs[^[:space:]]\+')
+  let l:root = fnamemodify(l:file, ':p:h')
+  return {'name': l:name, 'root': l:root, 'sources': [l:name . '/'], 'tests': ['tests/']}
+endfunction
+
+call project_detect#register('python-setupcfg', {'detect': function('s:setup_cfg')})
+```
+
+- `detect()` returns `''` when this is not such a project. Otherwise it returns
+  the project name, or a dict with `name` and any of `root` (default: the
+  working directory), `sources` and `tests` (default: `[]`).
+- Strategies are tried in order, built-in ones first, and the first match wins.
+  A strategy registered after startup triggers a new attempt if nothing matched
+  yet.
+- Search from `getcwd()`, as above, rather than from the current buffer (`'.;'`,
+  `expand('%')`). At `VimEnter` the current buffer can be anything: netrw, or
+  fugitive's status window after `vim . -c Git`.
 
 ## Install
 
