@@ -183,7 +183,8 @@ function! s:existing_dirs(root, dirs) abort
   return map(filter(copy(a:dirs), 'isdirectory(a:root . "/" . v:val)'), 'v:val . "/"')
 endfunction
 
-" Python: pyproject.toml, named by [project] or [tool.poetry]. The code is the
+" Python: pyproject.toml, named by g:project_name if set, else by [project] or
+" [tool.poetry]. The code is the
 " import package (src/ layout or flat). The tests are tests/ or test/, and the
 " files pytest collects: test_*.py and *_test.py.
 function! s:python() abort
@@ -191,9 +192,10 @@ function! s:python() abort
   if empty(l:file)
     return ''
   endif
-  let l:name = ''
+  " A g:project_name set beforehand is the name: no need to look for it
+  let l:name = get(g:, 'project_name', '')
   let l:section = ''
-  for l:line in readfile(l:file)
+  for l:line in empty(l:name) ? readfile(l:file) : []
     if l:line =~# '^\s*\['
       let l:section = matchstr(l:line, '^\s*\[\+\s*\zs[^]]\{-}\ze\s*\]')
     elseif l:section =~# '^\%(project\|tool\.poetry\)$' && l:line =~# '^\s*name\s*='
