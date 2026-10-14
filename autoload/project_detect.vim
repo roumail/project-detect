@@ -3,7 +3,9 @@
 " A strategy is a dict with one Funcref:
 "   detect()  -> '' when this is not such a project, else the project name or
 "                a dict describing the project:
-"                  name      the project name
+"                  name      the project name, '' when it declares none: it is
+"                            then named by g:project_name, and does not match
+"                            without it
 "                  root      the project root directory (default: getcwd())
 "                  language  the language, e.g. 'python' (default: '')
 "                  sources   where the code lives, relative to root
@@ -146,19 +148,27 @@ endfunction
 
 " Sets g:project_name from the first matching strategy and fires
 " User ProjectDetected. A g:project_name that is already set is kept, so it
-" can be overridden per project.
+" can be overridden per project, and names projects that declare no name.
 function! s:detect() abort
   let s:detected = 1
   for l:key in s:order
     let l:found = s:strategies[l:key].detect()
+    if empty(l:found)
+      continue
+    endif
     if type(l:found) == v:t_string
       let l:found = {'name': l:found}
     endif
-    if !empty(get(l:found, 'name', ''))
+    let l:name = get(g:, 'project_name', '')
+    if empty(l:name)
+      let l:name = get(l:found, 'name', '')
+    endif
+    if !empty(l:name)
       let s:active = l:key
       let s:project = extend({'root': getcwd(), 'language': '', 'sources': [], 'tests': []}, l:found)
       let s:project.root = fnamemodify(s:project.root, ':p:s?/$??')
-      let g:project_name = get(g:, 'project_name', l:found.name)
+      let s:project.name = l:name
+      let g:project_name = l:name
       if exists('#User#ProjectDetected')
         doautocmd <nomodeline> User ProjectDetected
       endif
@@ -183,19 +193,18 @@ function! s:existing_dirs(root, dirs) abort
   return map(filter(copy(a:dirs), 'isdirectory(a:root . "/" . v:val)'), 'v:val . "/"')
 endfunction
 
-" Python: pyproject.toml, named by g:project_name if set, else by [project] or
-" [tool.poetry]. The code is the
-" import package (src/ layout or flat). The tests are tests/ or test/, and the
-" files pytest collects: test_*.py and *_test.py.
+" Python: pyproject.toml, named by [project] or [tool.poetry], else after its
+" import package. The code is the import package (see s:python_package()).
+" The tests are tests/ or test/, and the files pytest collects: test_*.py and
+" *_test.py.
 function! s:python() abort
   let l:file = s:find_up('pyproject.toml')
   if empty(l:file)
     return ''
   endif
-  " A g:project_name set beforehand is the name: no need to look for it
-  let l:name = get(g:, 'project_name', '')
+  let l:name = ''
   let l:section = ''
-  for l:line in empty(l:name) ? readfile(l:file) : []
+  for l:line in readfile(l:file)
     if l:line =~# '^\s*\['
       let l:section = matchstr(l:line, '^\s*\[\+\s*\zs[^]]\{-}\ze\s*\]')
     elseif l:section =~# '^\%(project\|tool\.poetry\)$' && l:line =~# '^\s*name\s*='
@@ -203,24 +212,53 @@ function! s:python() abort
       break
     endif
   endfor
-  if empty(l:name)
-    return ''
-  endif
 
   let l:root = fnamemodify(l:file, ':h')
-  " The import package: my-project is imported as my_project
-  let l:package = substitute(tolower(l:name), '[-.]\+', '_', 'g')
-  let l:candidates = []
-  for l:dir in ['src/', '']
-    let l:candidates += [l:dir . l:package, l:dir . l:name]
-  endfor
+  let l:package = s:python_package(l:root, [l:name, get(g:, 'project_name', '')])
+  " src/ is not a name
+  if empty(l:name) && !empty(l:package) && l:package !=# 'src/'
+    let l:name = fnamemodify(l:package, ':h:t')
+  endif
   return {
         \ 'name': l:name,
         \ 'root': l:root,
         \ 'language': 'python',
-        \ 'sources': s:existing_dirs(l:root, l:candidates)[:0],
+        \ 'sources': empty(l:package) ? [] : [l:package],
         \ 'tests': s:existing_dirs(l:root, ['tests', 'test']) + ['test_*.py', '*_test.py'],
         \ }
+endfunction
+
+" The import package of the Python project in a:root, relative to it with a
+" trailing '/', or '' when there is none or there are several. In order:
+"   - src/<name>/ or <name>/ for one of a:names (my-project is imported as
+"     my_project)
+"   - src/, when it is a package itself
+"   - the only package in src/, else the only one in the root besides tests/
+"     and test/
+function! s:python_package(root, names) abort
+  let l:candidates = []
+  for l:name in filter(copy(a:names), '!empty(v:val)')
+    let l:package = substitute(tolower(l:name), '[-.]\+', '_', 'g')
+    for l:dir in ['src/', '']
+      let l:candidates += [l:dir . l:package, l:dir . l:name]
+    endfor
+  endfor
+  let l:named = s:existing_dirs(a:root, l:candidates)
+  if !empty(l:named)
+    return l:named[0]
+  endif
+  if filereadable(a:root . '/src/__init__.py')
+    return 'src/'
+  endif
+  for l:dir in ['src/', '']
+    let l:packages = map(glob(a:root . '/' . l:dir . '*/__init__.py', 0, 1),
+          \ 'l:dir . fnamemodify(v:val, ":h:t") . "/"')
+    call filter(l:packages, 'v:val !~# "^tests\\=/$"')
+    if !empty(l:packages)
+      return len(l:packages) == 1 ? l:packages[0] : ''
+    endif
+  endfor
+  return ''
 endfunction
 
 " Go: go.mod, named by the last element of the module path (without a /vN
@@ -231,18 +269,19 @@ function! s:go() abort
   if empty(l:file)
     return ''
   endif
+  let l:path = ''
   for l:line in readfile(l:file)
     let l:path = matchstr(l:line, '^\s*module\s\+["`]\?\zs[^"`[:space:]]\+')
     if !empty(l:path)
-      return {
-            \ 'name': fnamemodify(substitute(l:path, '/v\d\+$', '', ''), ':t'),
-            \ 'root': fnamemodify(l:file, ':h'),
-            \ 'language': 'go',
-            \ 'tests': ['*_test.go'],
-            \ }
+      break
     endif
   endfor
-  return ''
+  return {
+        \ 'name': fnamemodify(substitute(l:path, '/v\d\+$', '', ''), ':t'),
+        \ 'root': fnamemodify(l:file, ':h'),
+        \ 'language': 'go',
+        \ 'tests': ['*_test.go'],
+        \ }
 endfunction
 
 " Added directly: register() would detect again
