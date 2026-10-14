@@ -11,7 +11,7 @@ Python and Go projects are recognised out of the box:
 
 | Type | Recognised by | Name | Code | Tests | Test command |
 | --- | --- | --- | --- | --- | --- |
-| `python` | `pyproject.toml` | `name` in `[project]` or `[tool.poetry]` | the import package: `src/<pkg>/` or `<pkg>/` | `tests/`, `test/`, `test_*.py`, `*_test.py` | `pytest` |
+| `python` | `pyproject.toml` | `name` in `[project]` or `[tool.poetry]`, else the import package's | the import package: `src/<pkg>/` or `<pkg>/` named after the project, else `src/` when it is a package, else the only package in `src/` or the root | `tests/`, `test/`, `test_*.py`, `*_test.py` | `pytest` |
 | `go` | `go.mod` | last element of the module path, without a `/vN` suffix | the whole module | `*_test.go` | `go test` |
 
 The marker file is looked up from the working directory upwards, so Vim can be
@@ -34,7 +34,7 @@ belong to another project, does not change it.
 | `project_detect#is_test([file])` | Whether a file (default: the current buffer's) is one of the tests. |
 | `project_detect#scopes()` | The parts of the project to search: `project` and `tests`, each also limited to the language (`project python`). |
 | `project_detect#runner(language)` | How a language's tests run: `{'run': …, 'debug': …}`. |
-| `g:project_name` | Where the name is stored. Set it yourself beforehand to override the name only. |
+| `g:project_name` | Where the name is stored. Set it yourself beforehand, for example in a per-project vimrc, to name the project: it takes precedence over the name any strategy finds, and names projects that declare none. |
 | `project_detect#strategies()` | Strategy names, in detection order. |
 | `User ProjectDetected` | Fired after a strategy matches. |
 
@@ -82,6 +82,8 @@ call project_detect#register('python-setupcfg', {'detect': function('s:setup_cfg
 - `detect()` returns `''` when this is not such a project. Otherwise it returns
   the project name, or a dict with `name` and any of `root` (default: the
   working directory), `language`, `sources` and `tests` (default: `[]`).
+  `name` is `''` when the project declares none; `g:project_name` names it
+  then, and the strategy matches only when it is set.
 - Strategies are tried in order, built-in ones first, and the first match wins.
   A strategy registered after detection ran without a match triggers a new
   attempt.
