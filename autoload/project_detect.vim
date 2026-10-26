@@ -177,9 +177,6 @@ function! s:detect() abort
   endfor
 endfunction
 
-" Built-in strategies. Each looks for its marker file in the working directory
-" or above it (Vim is started inside the project).
-
 " The nearest file named a:name, from the working directory upwards, or ''.
 " Searches from getcwd(), not the current buffer: at VimEnter the buffer can be
 " netrw or fugitive's status window.
@@ -291,7 +288,6 @@ let s:strategies = {
       \ 'go': {'detect': function('s:go')},
       \ }
 
-" Built-in test runners, by language
 let s:runners = {
       \ 'python': {'run': 'pytest'},
       \ 'go': {'run': 'go test'},
