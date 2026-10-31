@@ -3,7 +3,7 @@
 Recognises the project Vim is started in and describes it: its type, name,
 language, root, where its code and tests live, and how its tests run. Other
 plugins build on the description:
-[fzf-utils](https://github.com/roumail/fzf-utils) greps its scopes and
+[fzf-utils](https://github.com/roumail/fzf-utils) greps its code and tests and
 [pytest.vim](https://github.com/roumail/pytest.vim) binds keys in its test
 files. It depends on nothing.
 
@@ -31,12 +31,9 @@ belong to another project, does not change it.
 | `project_detect#root()` | The project root directory. |
 | `project_detect#sources()` | Where the code lives, relative to the root. |
 | `project_detect#tests()` | Where the tests live, relative to the root. |
-| `project_detect#is_test([file])` | Whether a file (default: the current buffer's) is one of the tests. |
-| `project_detect#scopes()` | The parts of the project to search: `project` and `tests`, each also limited to the language (`project python`). |
+| `project_detect#is_test()` | Whether the current buffer's file is one of the tests. |
 | `project_detect#runner(language)` | How a language's tests run: `{'run': …, 'debug': …}`. |
 | `g:project_name` | Where the name is stored. Set it yourself beforehand, for example in a per-project vimrc, to name the project: it takes precedence over the name any strategy finds, and names projects that declare none. |
-| `project_detect#strategies()` | Strategy names, in detection order. |
-| `User ProjectDetected` | Fired after a strategy matches. |
 
 In `sources()` and `tests()`, entries ending in `/` are directories; the rest
 are file-name globs. A file belongs when it is in one of the directories or
