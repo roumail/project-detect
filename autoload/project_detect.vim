@@ -72,6 +72,12 @@ function! project_detect#runner(language) abort
   return l:runner
 endfunction
 
+" Detects once a session, from the directory Vim started in. Known limit
+" (found 2026-11-04 with pytest.vim's test lists): a file of another git work
+" tree opened in the same session isn't the project's, so is_test() is 0 for
+" it (no pytest.vim keys, not in :PytestTests), and :cd to that tree doesn't
+" detect again. Start Vim in the work tree you work in. A fix would detect
+" again on DirChanged.
 function! project_detect#detect() abort
   if !s:detected
     call s:detect()
