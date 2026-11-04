@@ -31,7 +31,7 @@ belong to another project, does not change it.
 | `project_detect#root()` | The project root directory. |
 | `project_detect#sources()` | Where the code lives, relative to the root. |
 | `project_detect#tests()` | Where the tests live, relative to the root. |
-| `project_detect#is_test()` | Whether the current buffer's file is one of the tests. |
+| `project_detect#is_test([file])` | Whether `file` (default: the current buffer's) is one of the tests. |
 | `project_detect#runner(language)` | How a language's tests run: `{'run': …, 'debug': …}`. |
 | `g:project_name` | Where the name is stored. Set it yourself beforehand, for example in a per-project vimrc, to name the project: it takes precedence over the name any strategy finds, and names projects that declare none. |
 

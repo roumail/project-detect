@@ -41,12 +41,13 @@ function! project_detect#tests() abort
   return copy(get(s:project, 'tests', []))
 endfunction
 
-function! project_detect#is_test() abort
+" Whether a file (default: the current buffer's) is one of the tests
+function! project_detect#is_test(...) abort
   let l:root = project_detect#root()
   if empty(l:root)
     return 0
   endif
-  let l:path = fnamemodify(bufname('%'), ':p')
+  let l:path = fnamemodify(a:0 ? a:1 : bufname('%'), ':p')
   if stridx(l:path, l:root . '/') != 0
     return 0
   endif
