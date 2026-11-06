@@ -197,14 +197,40 @@ function! s:go() abort
         \ }
 endfunction
 
+" A directory with Vim script in plugin/ or autoload/, from the working
+" directory upwards
+function! s:vim() abort
+  let l:dir = getcwd()
+  while 1
+    if !empty(glob(l:dir . '/plugin/*.vim', 1, 1)) || !empty(glob(l:dir . '/autoload/**/*.vim', 1, 1))
+      break
+    endif
+    let l:parent = fnamemodify(l:dir, ':h')
+    if l:parent ==# l:dir
+      return ''
+    endif
+    let l:dir = l:parent
+  endwhile
+  return {
+        \ 'name': fnamemodify(l:dir, ':t'),
+        \ 'root': l:dir,
+        \ 'language': 'vim',
+        \ 'sources': s:existing_dirs(l:dir, ['autoload', 'plugin', 'ftplugin', 'ftdetect',
+        \   'syntax', 'indent', 'compiler', 'colors', 'after']),
+        \ 'tests': s:existing_dirs(l:dir, ['test', 'tests']),
+        \ }
+endfunction
+
 " Added directly: register() would detect again
-let s:order = ['python', 'go']
+let s:order = ['python', 'go', 'vim']
 let s:strategies = {
       \ 'python': {'detect': function('s:python')},
       \ 'go': {'detect': function('s:go')},
+      \ 'vim': {'detect': function('s:vim')},
       \ }
 
 let s:runners = {
       \ 'python': {'run': 'pytest'},
       \ 'go': {'run': 'go test'},
+      \ 'vim': {'run': 'vim -Nu NONE -i NONE -Es -S test/run.vim'},
       \ }
