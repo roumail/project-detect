@@ -232,5 +232,4 @@ let s:strategies = {
 let s:runners = {
       \ 'python': {'run': 'pytest'},
       \ 'go': {'run': 'go test'},
-      \ 'vim': {'run': 'vim -Nu NONE -i NONE -Es -S test/run.vim'},
       \ }

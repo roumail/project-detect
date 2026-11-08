@@ -3,8 +3,8 @@
 Recognises the project Vim is started in and describes it: its type, name,
 language, root, where its code and tests live, and how its tests run. Other
 plugins build on the description:
-[fzf-utils](https://github.com/roumail/fzf-utils) greps its code and tests and
-[pytest.vim](https://github.com/roumail/pytest.vim) binds keys in its test
+[fzf-utils](https://github.com/vimoured/fzf-utils) greps its code and tests and
+[pytest.vim](https://github.com/vimoured/pytest.vim) binds keys in its test
 files. It depends on nothing.
 
 Python, Go and Vim plugin projects are recognised out of the box:
@@ -13,7 +13,7 @@ Python, Go and Vim plugin projects are recognised out of the box:
 | --- | --- | --- | --- | --- | --- |
 | `python` | `pyproject.toml` | `name` in `[project]` or `[tool.poetry]`, else the import package's | the import package: `src/<pkg>/` or `<pkg>/` named after the project, else `src/` when it is a package, else the only package in `src/` or the root | `tests/`, `test/`, `test_*.py`, `*_test.py` | `pytest` |
 | `go` | `go.mod` | last element of the module path, without a `/vN` suffix | the whole module | `*_test.go` | `go test` |
-| `vim` | Vim script in `plugin/` or `autoload/` | the directory's name | `autoload/`, `plugin/`, `ftplugin/`, `ftdetect/`, `syntax/`, `indent/`, `compiler/`, `colors/`, `after/` | `test/`, `tests/` | `vim -Nu NONE -i NONE -Es -S test/run.vim` |
+| `vim` | Vim script in `plugin/` or `autoload/` | the directory's name | `autoload/`, `plugin/`, `ftplugin/`, `ftdetect/`, `syntax/`, `indent/`, `compiler/`, `colors/`, `after/` | `test/`, `tests/` | |
 
 The marker (for `vim`, the `plugin/` or `autoload/` directory) is looked up
 from the working directory upwards, so Vim can be started anywhere inside the
@@ -93,5 +93,12 @@ call project_detect#register('python-setupcfg', {'detect': function('s:setup_cfg
 ## Install
 
 ```vim
-Plug 'roumail/project-detect'
+Plug 'vimoured/project-detect'
 ```
+
+## Tests
+
+Tested by [vim-suite](https://github.com/vimoured/vim-suite), in
+`test/project-detect.vim`: each case starts its own Vim, with the dotfiles,
+in a Python, Go or Vim plugin project made for it, and asks what the plugins
+that build on it ask. Every pull request runs them.
