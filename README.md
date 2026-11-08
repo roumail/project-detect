@@ -1,94 +1,12 @@
 # project-detect
 
-Recognises the project Vim is started in and describes it: its type, name,
-language, root, where its code and tests live, and how its tests run. Other
-plugins build on the description:
-[fzf-utils](https://github.com/vimoured/fzf-utils) greps its code and tests and
-[pytest.vim](https://github.com/vimoured/pytest.vim) binds keys in its test
-files. It depends on nothing.
+Recognises the project Vim starts in, and describes it for other plugins: its
+type, name, language, root, where its code and tests live, and how its tests
+run. Python (`pyproject.toml`), Go (`go.mod`) and Vim plugin projects work out
+of the box.
 
-Python, Go and Vim plugin projects are recognised out of the box:
-
-| Type | Recognised by | Name | Code | Tests | Test command |
-| --- | --- | --- | --- | --- | --- |
-| `python` | `pyproject.toml` | `name` in `[project]` or `[tool.poetry]`, else the import package's | the import package: `src/<pkg>/` or `<pkg>/` named after the project, else `src/` when it is a package, else the only package in `src/` or the root | `tests/`, `test/`, `test_*.py`, `*_test.py` | `pytest` |
-| `go` | `go.mod` | last element of the module path, without a `/vN` suffix | the whole module | `*_test.go` | `go test` |
-| `vim` | Vim script in `plugin/` or `autoload/` | the directory's name | `autoload/`, `plugin/`, `ftplugin/`, `ftdetect/`, `syntax/`, `indent/`, `compiler/`, `colors/`, `after/` | `test/`, `tests/` | |
-
-The marker (for `vim`, the `plugin/` or `autoload/` directory) is looked up
-from the working directory upwards, so Vim can be started anywhere inside the
-project, for example in a Go module's `cmd/app`.
-
-## The project is the working directory
-
-The project is detected once, from the directory Vim starts in: at `VimEnter`,
-or as soon as a plugin asks for it. Opening files elsewhere, or files that
-belong to another project, does not change it.
-
-| Result | |
-| --- | --- |
-| `project_detect#active()` | The project type (`'python'`, `'go'`, `'vim'`), or `''`. |
-| `project_detect#name()` | The project name, or `''`. |
-| `project_detect#language()` | The project's language (`'python'`, `'go'`, `'vim'`), or `''`. |
-| `project_detect#root()` | The project root directory. |
-| `project_detect#sources()` | Where the code lives, relative to the root. |
-| `project_detect#tests()` | Where the tests live, relative to the root. |
-| `project_detect#is_test([file])` | Whether `file` (default: the current buffer's) is one of the tests. |
-| `project_detect#runner(language)` | How a language's tests run: `{'run': …, 'debug': …}`. |
-| `g:project_name` | Where the name is stored. Set it yourself beforehand, for example in a per-project vimrc, to name the project: it takes precedence over the name any strategy finds, and names projects that declare none. |
-
-In `sources()` and `tests()`, entries ending in `/` are directories; the rest
-are file-name globs. A file belongs when it is in one of the directories or
-matches one of the globs.
-
-## Test commands: `g:project_detect_runners`
-
-Set the commands for a language to run its tests your way. `debug` runs
-interactive debugging sessions (pytest's `--trace` / `--pdb`) and defaults to
-`run`:
-
-```vim
-let g:project_detect_runners = {
-      \ 'python': {'run': 'chkpyt.sh', 'debug': 'chkpyt.sh --no-default-addopts'},
-      \ }
-```
-
-## More project types
-
-A strategy recognises one type of project. Register your own for other
-layouts, or under `'python'`, `'go'` or `'vim'` to replace a built-in one:
-
-```vim
-" Python packages that only have a setup.cfg
-function! s:setup_cfg() abort
-  let l:file = findfile('setup.cfg', escape(getcwd(), ' ,\') . ';')
-  if empty(l:file)
-    return ''
-  endif
-  let l:name = matchstr(join(readfile(l:file), "\n"), '\n\s*name\s*=\s*\zs[^[:space:]]\+')
-  return {
-        \ 'name': l:name,
-        \ 'root': fnamemodify(l:file, ':p:h'),
-        \ 'language': 'python',
-        \ 'sources': [l:name . '/'],
-        \ 'tests': ['tests/'],
-        \ }
-endfunction
-
-call project_detect#register('python-setupcfg', {'detect': function('s:setup_cfg')})
-```
-
-- `detect()` returns `''` when this is not such a project. Otherwise it returns
-  the project name, or a dict with `name` and any of `root` (default: the
-  working directory), `language`, `sources` and `tests` (default: `[]`).
-  `name` is `''` when the project declares none; `g:project_name` names it
-  then, and the strategy matches only when it is set.
-- Strategies are tried in order, built-in ones first, and the first match wins.
-  A strategy registered after detection ran without a match triggers a new
-  attempt.
-- Search from `getcwd()`, as above, rather than from the current buffer (`'.;'`,
-  `expand('%')`). At `VimEnter` the current buffer can be anything: netrw, or
-  fugitive's status window after `vim . -c Git`.
+**Vim or Neovim:** tested on Vim 9.1 and newer. It's plain Vimscript, so it may
+work on Neovim, but that's untested.
 
 ## Install
 
@@ -96,9 +14,35 @@ call project_detect#register('python-setupcfg', {'detect': function('s:setup_cfg
 Plug 'vimoured/project-detect'
 ```
 
+## Use
+
+The project is detected once, from the directory Vim starts in or above it.
+
+| Function | Returns |
+| --- | --- |
+| `project_detect#active()` | The project type, or `''`. |
+| `project_detect#name()` | The project name, or `''`. Set `g:project_name` to choose it. |
+| `project_detect#language()` | The project's language, or `''`. |
+| `project_detect#root()` | The project root. |
+| `project_detect#sources()` | Where the code lives, relative to the root. |
+| `project_detect#tests()` | Where the tests live, relative to the root. |
+| `project_detect#is_test([file])` | Whether a file is one of the tests. |
+| `project_detect#runner(language)` | How its tests run: `{'run': …, 'debug': …}`. |
+
+Set the test commands for a language:
+
+```vim
+let g:project_detect_runners = {
+      \ 'python': {'run': 'chkpyt.sh', 'debug': 'chkpyt.sh --no-default-addopts'},
+      \ }
+```
+
+Add another project type with
+`project_detect#register(name, {'detect': function('s:detect')})`. `detect()`
+returns `''` when it isn't that kind of project, else the project name or a dict
+with `name` and any of `root`, `language`, `sources` and `tests`.
+
 ## Tests
 
-Tested by [vim-suite](https://github.com/vimoured/vim-suite), in
-`test/project-detect.vim`: each case starts its own Vim, with the dotfiles,
-in a Python, Go or Vim plugin project made for it, and asks what the plugins
-that build on it ask. Every pull request runs them.
+The specs in [vim-suite](https://github.com/vimoured/vim-suite) define what it
+does: `test/project-detect.vim`.
