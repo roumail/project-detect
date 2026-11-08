@@ -1,0 +1,9 @@
+name: suite
+
+# Runs vimoured/vim-suite with this plugin at the pull request's commit and
+# everything else at main. The vim-suite / suite check must pass to merge.
+on: pull_request
+
+jobs:
+  vim-suite:
+    uses: vimoured/vim-suite/.github/workflows/suite.yml@main
