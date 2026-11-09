@@ -26,13 +26,11 @@ function! project_detect#root() abort
   return get(s:project, 'root', '')
 endfunction
 
-" One for each language: {'language': ..., 'sources': [...], 'tests': [...]}
 function! project_detect#parts() abort
   call project_detect#detect()
   return deepcopy(get(s:project, 'parts', []))
 endfunction
 
-" The part a file (default: the current buffer's) belongs to, or {}
 function! project_detect#part(...) abort
   call project_detect#detect()
   if empty(s:project)
@@ -41,8 +39,6 @@ function! project_detect#part(...) abort
   return deepcopy(s:part_of(fnamemodify(a:0 ? a:1 : bufname('%'), ':p')))
 endfunction
 
-" Where a file is decides before its extension: Python under a Rust crate's
-" crates/ is that crate's test data. With one part, every file is in it.
 function! s:part_of(path) abort
   if len(s:project.parts) == 1
     return s:project.parts[0]
@@ -50,12 +46,11 @@ function! s:part_of(path) abort
   if stridx(a:path, s:project.root . '/') != 0
     return {}
   endif
-  let l:relative = a:path[len(s:project.root) + 1 :]
   let l:part = {}
   let l:longest = 0
   for l:candidate in s:project.parts
     for l:place in filter(l:candidate.sources + l:candidate.tests, 'v:val =~# "/$"')
-      if len(l:place) > l:longest && stridx(l:relative, l:place) == 0
+      if len(l:place) > l:longest && stridx(a:path, s:project.root . '/' . l:place) == 0
         let l:part = l:candidate
         let l:longest = len(l:place)
       endif
@@ -64,16 +59,14 @@ function! s:part_of(path) abort
   if !empty(l:part)
     return l:part
   endif
-  let l:extension = fnamemodify(a:path, ':e')
   for l:candidate in s:project.parts
-    if index(get(s:extensions, l:candidate.language, [l:candidate.language]), l:extension) >= 0
+    if get({'python': 'py', 'rust': 'rs'}, l:candidate.language, l:candidate.language) ==# fnamemodify(a:path, ':e')
       return l:candidate
     endif
   endfor
   return {}
 endfunction
 
-" Whether a file (default: the current buffer's) is one of its part's tests
 function! project_detect#is_test(...) abort
   let l:root = project_detect#root()
   if empty(l:root)
@@ -118,9 +111,7 @@ function! s:detect() abort
     return
   endif
   " Strategies look upwards: one found further up is a project around this one
-  let l:deepest = max(map(copy(l:parts), 'len(v:val.root)'))
-  call filter(l:parts, 'len(v:val.root) == l:deepest')
-  " Overrides the strategies' names, and names projects they can't
+  call filter(l:parts, 'len(v:val.root) == ' . max(map(copy(l:parts), 'len(v:val.root)')))
   let l:name = get(g:, 'project_name', '')
   for l:part in l:parts
     let l:name = empty(l:name) ? l:part.name : l:name
@@ -184,21 +175,6 @@ function! s:error(message) abort
   echohl None
 endfunction
 
-" Strongest first: a requirements.txt can sit in a docs/ below a setup.py
-let s:python_files = ['pyproject.toml', 'setup.py', 'setup.cfg', 'Pipfile',
-      \ 'requirements.txt', 'tox.ini', 'manage.py', 'wsgi.py', 'app.py']
-
-function! s:python_file() abort
-  for l:name in s:python_files
-    let l:file = s:find_up(l:name)
-    if !empty(l:file)
-      return l:file
-    endif
-  endfor
-  return ''
-endfunction
-
-" A string from a TOML file, in a section matching the pattern; '' if none
 function! s:toml_string(file, sections, key) abort
   let l:section = ''
   for l:line in filereadable(a:file) ? readfile(a:file) : []
@@ -211,40 +187,32 @@ function! s:toml_string(file, sections, key) abort
   return ''
 endfunction
 
-function! s:pyproject_name(root) abort
-  return s:toml_string(a:root . '/pyproject.toml', 'project\|tool\.poetry', 'name')
-endfunction
-
-" The Python package of a Rust extension, as maturin's python-source says
-function! s:maturin_package(root) abort
-  let l:file = a:root . '/pyproject.toml'
-  let l:source = s:toml_string(l:file, 'tool\.maturin', 'python-source')
-  if empty(l:source)
-    return []
-  endif
-  " module-name can be dotted: pkg._native is in pkg
-  let l:module = matchstr(s:toml_string(l:file, 'tool\.maturin', 'module-name'), '^[^.]\+')
-  return s:existing_dirs(a:root, (empty(l:module) ? [] : [l:source . '/' . l:module]) + [l:source])[:0]
-endfunction
-
-" When nothing else names it, the directory does, but only where Vim started:
-" a requirements.txt further up may not be this project's
+" A requirements.txt further up may not be this project's
 function! s:directory_name(root) abort
   return a:root ==# getcwd() ? fnamemodify(a:root, ':t') : ''
 endfunction
 
 function! s:python() abort
-  let l:file = s:python_file()
+  " Strongest first: a requirements.txt can sit in a docs/ below a setup.py
+  for l:sign in ['pyproject.toml', 'setup.py', 'setup.cfg', 'Pipfile',
+        \ 'requirements.txt', 'tox.ini', 'manage.py', 'wsgi.py', 'app.py']
+    let l:file = s:find_up(l:sign)
+    if !empty(l:file)
+      break
+    endif
+  endfor
   if empty(l:file)
     return ''
   endif
   let l:root = fnamemodify(l:file, ':h')
+  let l:pyproject = l:root . '/pyproject.toml'
   let l:name = get(g:, 'project_name', '')
-  " Where the code is, whatever the project is called: no folder is expected
-  " under the name
-  let l:packages = s:maturin_package(l:root)
+  let l:source = s:toml_string(l:pyproject, 'tool\.maturin', 'python-source')
+  let l:module = s:toml_string(l:pyproject, 'tool\.maturin', 'module-name')
+  " Whatever the project is called: no folder is expected under the name
+  let l:packages = empty(l:source) || empty(l:module) ? [] : s:existing_dirs(l:root, [l:source . '/' . l:module])
   if empty(l:name)
-    let l:name = s:pyproject_name(l:root)
+    let l:name = s:toml_string(l:pyproject, 'project\|tool\.poetry', 'name')
     if empty(l:packages) && !empty(l:name)
       let l:packages = s:existing_dirs(l:root, s:package_dirs(l:name))
     endif
@@ -305,12 +273,14 @@ function! s:go() abort
         \ }
 endfunction
 
-" [workspace] members, on one line or several
-function! s:cargo_members(file) abort
+function! s:rust() abort
+  let l:file = s:find_up('Cargo.toml')
+  if empty(l:file)
+    return ''
+  endif
   let l:section = ''
   let l:text = ''
-  for l:line in readfile(a:file)
-    let l:line = substitute(l:line, '\s*#.*', '', '')
+  for l:line in readfile(l:file)
     if !empty(l:text)
       let l:text .= l:line
     elseif l:line =~# '^\s*\['
@@ -324,18 +294,10 @@ function! s:cargo_members(file) abort
   endfor
   let l:members = []
   call substitute(matchstr(l:text, '=\zs.*'), '["'']\([^"'']\+\)["'']', '\=add(l:members, submatch(1))[-1]', 'g')
-  return filter(l:members, 'v:val !=# "."')
-endfunction
-
-function! s:rust() abort
-  let l:file = s:find_up('Cargo.toml')
-  if empty(l:file)
-    return ''
-  endif
   let l:root = fnamemodify(l:file, ':h')
   let l:sources = ['src']
   let l:crates = []
-  for l:member in s:cargo_members(l:file)
+  for l:member in l:members
     let l:found = map(glob(l:root . '/' . l:member . '/Cargo.toml', 1, 1),
           \ 'fnamemodify(v:val, ":h")[len(l:root) + 1 :]')
     call extend(l:crates, l:found)
@@ -352,27 +314,15 @@ function! s:rust() abort
         \ }
 endfunction
 
-" A directory with Vim script in plugin/ or autoload/, from the working
-" directory upwards
-function! s:vim_root() abort
+function! s:vim() abort
   let l:dir = getcwd()
-  while 1
-    if !empty(glob(l:dir . '/plugin/*.vim', 1, 1)) || !empty(glob(l:dir . '/autoload/**/*.vim', 1, 1))
-      return l:dir
-    endif
+  while empty(glob(l:dir . '/plugin/*.vim', 1, 1)) && empty(glob(l:dir . '/autoload/**/*.vim', 1, 1))
     let l:parent = fnamemodify(l:dir, ':h')
     if l:parent ==# l:dir
       return ''
     endif
     let l:dir = l:parent
   endwhile
-endfunction
-
-function! s:vim() abort
-  let l:dir = s:vim_root()
-  if empty(l:dir)
-    return ''
-  endif
   return {
         \ 'name': fnamemodify(l:dir, ':t'),
         \ 'root': l:dir,
@@ -404,7 +354,3 @@ let s:strategies = {
       \ 'vim': {'detect': function('s:vim')},
       \ 'declared': {'detect': function('s:declared')},
       \ }
-
-" A file's language, where more than one part could have it. Any other
-" language is taken to be its own extension.
-let s:extensions = {'python': ['py', 'pyi'], 'rust': ['rs']}

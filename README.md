@@ -46,9 +46,9 @@ is named after its directory, if Vim started there.
 
 Set `g:project_name` to use it in place of detecting a name. It's enough to make
 the directory a project, with tests in `tests/` or `test/`. In that project, and
-in a Python one that doesn't set maturin's `python-source`, it's the folder to
-search, at the root or in `src/`: Vim shows an error at startup if there's no
-such folder.
+in a Python one that doesn't set maturin's `python-source` and `module-name`,
+it's the folder to search, at the root or in `src/`: Vim shows an error at
+startup if there's no such folder.
 
 Add another project type with
 `project_detect#register(name, {'detect': function('s:detect')})`. `detect()`
