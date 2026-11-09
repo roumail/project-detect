@@ -1,0 +1,12 @@
+name: tag
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    uses: vimoured/vim-suite/.github/workflows/tag.yml@main
