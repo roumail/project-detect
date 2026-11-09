@@ -65,15 +65,6 @@ function! project_detect#is_test(...) abort
   return 0
 endfunction
 
-function! project_detect#runner(language) abort
-  let l:runner = extend(copy(get(s:runners, a:language, {})),
-        \ get(get(g:, 'project_detect_runners', {}), a:language, {}))
-  if has_key(l:runner, 'run') && !has_key(l:runner, 'debug')
-    let l:runner.debug = l:runner.run
-  endif
-  return l:runner
-endfunction
-
 " Detects once a session, from the directory Vim started in. Known limit
 " (found 2026-11-04 with pytest.vim's test lists): a file of another git work
 " tree opened in the same session isn't the project's, so is_test() is 0 for
@@ -297,9 +288,4 @@ let s:signs = {
       \ 'python': function('s:python_file'),
       \ 'go': {-> s:find_up('go.mod')},
       \ 'vim': function('s:vim_root'),
-      \ }
-
-let s:runners = {
-      \ 'python': {'run': 'pytest'},
-      \ 'go': {'run': 'go test'},
       \ }
