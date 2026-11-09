@@ -7,8 +7,6 @@ function! project_detect#register(name, strategy) abort
     call add(s:order, a:name)
   endif
   let s:strategies[a:name] = a:strategy
-  " A built-in it replaces no longer counts towards more than one language
-  call filter(s:signs, 'v:key !=# a:name')
   if s:detected && empty(s:active)
     call s:detect()
   endif
@@ -28,22 +26,54 @@ function! project_detect#root() abort
   return get(s:project, 'root', '')
 endfunction
 
-function! project_detect#language() abort
+" One for each language: {'language': ..., 'sources': [...], 'tests': [...]}
+function! project_detect#parts() abort
   call project_detect#detect()
-  return get(s:project, 'language', '')
+  return deepcopy(get(s:project, 'parts', []))
 endfunction
 
-function! project_detect#sources() abort
+" The part a file (default: the current buffer's) belongs to, or {}
+function! project_detect#part(...) abort
   call project_detect#detect()
-  return copy(get(s:project, 'sources', []))
+  if empty(s:project)
+    return {}
+  endif
+  return deepcopy(s:part_of(fnamemodify(a:0 ? a:1 : bufname('%'), ':p')))
 endfunction
 
-function! project_detect#tests() abort
-  call project_detect#detect()
-  return copy(get(s:project, 'tests', []))
+" Where a file is decides before its extension: Python under a Rust crate's
+" crates/ is that crate's test data. With one part, every file is in it.
+function! s:part_of(path) abort
+  if len(s:project.parts) == 1
+    return s:project.parts[0]
+  endif
+  if stridx(a:path, s:project.root . '/') != 0
+    return {}
+  endif
+  let l:relative = a:path[len(s:project.root) + 1 :]
+  let l:part = {}
+  let l:longest = 0
+  for l:candidate in s:project.parts
+    for l:place in filter(l:candidate.sources + l:candidate.tests, 'v:val =~# "/$"')
+      if len(l:place) > l:longest && stridx(l:relative, l:place) == 0
+        let l:part = l:candidate
+        let l:longest = len(l:place)
+      endif
+    endfor
+  endfor
+  if !empty(l:part)
+    return l:part
+  endif
+  let l:extension = fnamemodify(a:path, ':e')
+  for l:candidate in s:project.parts
+    if index(get(s:extensions, l:candidate.language, [l:candidate.language]), l:extension) >= 0
+      return l:candidate
+    endif
+  endfor
+  return {}
 endfunction
 
-" Whether a file (default: the current buffer's) is one of the tests
+" Whether a file (default: the current buffer's) is one of its part's tests
 function! project_detect#is_test(...) abort
   let l:root = project_detect#root()
   if empty(l:root)
@@ -53,7 +83,7 @@ function! project_detect#is_test(...) abort
   if stridx(l:path, l:root . '/') != 0
     return 0
   endif
-  for l:place in s:project.tests
+  for l:place in get(s:part_of(l:path), 'tests', [])
     if l:place =~# '/$'
       if stridx(l:path, l:root . '/' . l:place) == 0
         return 1
@@ -79,12 +109,33 @@ endfunction
 
 function! s:detect() abort
   let s:detected = 1
-  let l:languages = sort(filter(keys(s:signs), '!empty(s:signs[v:val]())'))
-  if len(l:languages) > 1
-    call s:error('more than one language here (' . join(l:languages, ', ') . '): no project detected')
+  let l:parts = s:found(s:order)
+  " Only when no language is here: it would be a part with no language
+  if empty(l:parts)
+    let l:parts = s:found(['declared'])
+  endif
+  if empty(l:parts)
     return
   endif
-  for l:key in s:order + ['declared']
+  " Strategies look upwards: one found further up is a project around this one
+  let l:deepest = max(map(copy(l:parts), 'len(v:val.root)'))
+  call filter(l:parts, 'len(v:val.root) == l:deepest')
+  " Overrides the strategies' names, and names projects they can't
+  let l:name = get(g:, 'project_name', '')
+  for l:part in l:parts
+    let l:name = empty(l:name) ? l:part.name : l:name
+  endfor
+  if !empty(l:name)
+    let s:active = l:parts[0].key
+    let s:project = {'root': l:parts[0].root, 'parts': l:parts}
+    " After the strategies: they take a name here as one you gave
+    let g:project_name = l:name
+  endif
+endfunction
+
+function! s:found(keys) abort
+  let l:parts = []
+  for l:key in a:keys
     let l:found = s:strategies[l:key].detect()
     if empty(l:found)
       continue
@@ -92,19 +143,12 @@ function! s:detect() abort
     if type(l:found) == v:t_string
       let l:found = {'name': l:found}
     endif
-    " Overrides the strategy's name, and names projects it can't
-    let l:name = get(g:, 'project_name', '')
-    if empty(l:name)
-      let l:name = get(l:found, 'name', '')
-    endif
-    if !empty(l:name)
-      let s:active = l:key
-      let s:project = extend({'root': getcwd(), 'language': '', 'sources': [], 'tests': []}, l:found)
-      let s:project.root = fnamemodify(s:project.root, ':p:s?/$??')
-      let g:project_name = l:name
-      return
-    endif
+    let l:part = extend({'root': getcwd(), 'name': '', 'language': '', 'sources': [], 'tests': []}, l:found)
+    let l:part.key = l:key
+    let l:part.root = fnamemodify(l:part.root, ':p:s?/$??')
+    call add(l:parts, l:part)
   endfor
+  return l:parts
 endfunction
 
 function! s:find_up(name) abort
@@ -154,17 +198,39 @@ function! s:python_file() abort
   return ''
 endfunction
 
-function! s:pyproject_name(root) abort
-  let l:file = a:root . '/pyproject.toml'
+" A string from a TOML file, in a section matching the pattern; '' if none
+function! s:toml_string(file, sections, key) abort
   let l:section = ''
-  for l:line in filereadable(l:file) ? readfile(l:file) : []
+  for l:line in filereadable(a:file) ? readfile(a:file) : []
     if l:line =~# '^\s*\['
       let l:section = matchstr(l:line, '^\s*\[\+\s*\zs[^]]\{-}\ze\s*\]')
-    elseif l:section =~# '^\%(project\|tool\.poetry\)$' && l:line =~# '^\s*name\s*='
-      return matchstr(l:line, '^\s*name\s*=\s*[''"]\zs[^''"]\+')
+    elseif l:section =~# '^\%(' . a:sections . '\)$' && l:line =~# '^\s*' . a:key . '\s*='
+      return matchstr(l:line, '^\s*' . a:key . '\s*=\s*[''"]\zs[^''"]\+')
     endif
   endfor
   return ''
+endfunction
+
+function! s:pyproject_name(root) abort
+  return s:toml_string(a:root . '/pyproject.toml', 'project\|tool\.poetry', 'name')
+endfunction
+
+" The Python package of a Rust extension, as maturin's python-source says
+function! s:maturin_package(root) abort
+  let l:file = a:root . '/pyproject.toml'
+  let l:source = s:toml_string(l:file, 'tool\.maturin', 'python-source')
+  if empty(l:source)
+    return []
+  endif
+  " module-name can be dotted: pkg._native is in pkg
+  let l:module = matchstr(s:toml_string(l:file, 'tool\.maturin', 'module-name'), '^[^.]\+')
+  return s:existing_dirs(a:root, (empty(l:module) ? [] : [l:source . '/' . l:module]) + [l:source])[:0]
+endfunction
+
+" When nothing else names it, the directory does, but only where Vim started:
+" a requirements.txt further up may not be this project's
+function! s:directory_name(root) abort
+  return a:root ==# getcwd() ? fnamemodify(a:root, ':t') : ''
 endfunction
 
 function! s:python() abort
@@ -174,10 +240,15 @@ function! s:python() abort
   endif
   let l:root = fnamemodify(l:file, ':h')
   let l:name = get(g:, 'project_name', '')
+  " Where the code is, whatever the project is called: no folder is expected
+  " under the name
+  let l:packages = s:maturin_package(l:root)
   if empty(l:name)
     let l:name = s:pyproject_name(l:root)
-    let l:packages = empty(l:name) ? [] : s:existing_dirs(l:root, s:package_dirs(l:name))
-  else
+    if empty(l:packages) && !empty(l:name)
+      let l:packages = s:existing_dirs(l:root, s:package_dirs(l:name))
+    endif
+  elseif empty(l:packages)
     let l:packages = s:named_folders(l:root)
   endif
   if empty(l:packages) && filereadable(l:root . '/src/__init__.py')
@@ -201,6 +272,9 @@ function! s:python() abort
   " src/ is not a name
   if empty(l:name) && !empty(l:package) && l:package !=# 'src/'
     let l:name = fnamemodify(l:package, ':h:t')
+  endif
+  if empty(l:name)
+    let l:name = s:directory_name(l:root)
   endif
   return {
         \ 'name': l:name,
@@ -228,6 +302,53 @@ function! s:go() abort
         \ 'root': fnamemodify(l:file, ':h'),
         \ 'language': 'go',
         \ 'tests': ['*_test.go'],
+        \ }
+endfunction
+
+" [workspace] members, on one line or several
+function! s:cargo_members(file) abort
+  let l:section = ''
+  let l:text = ''
+  for l:line in readfile(a:file)
+    let l:line = substitute(l:line, '\s*#.*', '', '')
+    if !empty(l:text)
+      let l:text .= l:line
+    elseif l:line =~# '^\s*\['
+      let l:section = matchstr(l:line, '^\s*\[\+\s*\zs[^]]\{-}\ze\s*\]')
+    elseif l:section ==# 'workspace' && l:line =~# '^\s*members\s*='
+      let l:text = l:line
+    endif
+    if l:text =~# '\]'
+      break
+    endif
+  endfor
+  let l:members = []
+  call substitute(matchstr(l:text, '=\zs.*'), '["'']\([^"'']\+\)["'']', '\=add(l:members, submatch(1))[-1]', 'g')
+  return filter(l:members, 'v:val !=# "."')
+endfunction
+
+function! s:rust() abort
+  let l:file = s:find_up('Cargo.toml')
+  if empty(l:file)
+    return ''
+  endif
+  let l:root = fnamemodify(l:file, ':h')
+  let l:sources = ['src']
+  let l:crates = []
+  for l:member in s:cargo_members(l:file)
+    let l:found = map(glob(l:root . '/' . l:member . '/Cargo.toml', 1, 1),
+          \ 'fnamemodify(v:val, ":h")[len(l:root) + 1 :]')
+    call extend(l:crates, l:found)
+    " crates/* is one place to search, however many crates are in it
+    call extend(l:sources, empty(l:found) || l:member !~# '/\*$' ? l:found : [l:member[: -3]])
+  endfor
+  let l:name = s:toml_string(l:file, 'package', 'name')
+  return {
+        \ 'name': empty(l:name) ? s:directory_name(l:root) : l:name,
+        \ 'root': l:root,
+        \ 'language': 'rust',
+        \ 'sources': s:existing_dirs(l:root, l:sources),
+        \ 'tests': s:existing_dirs(l:root, ['tests'] + map(copy(l:crates), 'v:val . "/tests"')) + ['tests.rs'],
         \ }
 endfunction
 
@@ -275,17 +396,15 @@ function! s:declared() abort
 endfunction
 
 " Added directly: register() would detect again
-let s:order = ['python', 'go', 'vim']
+let s:order = ['python', 'go', 'rust', 'vim']
 let s:strategies = {
       \ 'python': {'detect': function('s:python')},
       \ 'go': {'detect': function('s:go')},
+      \ 'rust': {'detect': function('s:rust')},
       \ 'vim': {'detect': function('s:vim')},
       \ 'declared': {'detect': function('s:declared')},
       \ }
 
-" What says a project is in that language, whether or not it has a name
-let s:signs = {
-      \ 'python': function('s:python_file'),
-      \ 'go': {-> s:find_up('go.mod')},
-      \ 'vim': function('s:vim_root'),
-      \ }
+" A file's language, where more than one part could have it. Any other
+" language is taken to be its own extension.
+let s:extensions = {'python': ['py', 'pyi'], 'rust': ['rs']}
