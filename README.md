@@ -1,10 +1,10 @@
 # project-detect
 
 Recognises the project Vim starts in, and describes it for other plugins: its
-type, name, language, root, where its code and tests live, and how its tests
-run. Python (`pyproject.toml`, `setup.py`, `setup.cfg`, `Pipfile`,
-`requirements.txt`, `tox.ini`, `manage.py`, `wsgi.py` or `app.py`), Go (`go.mod`)
-and Vim plugin projects work out of the box.
+type, name, language, root, and where its code and tests live. Python
+(`pyproject.toml`, `setup.py`, `setup.cfg`, `Pipfile`, `requirements.txt`,
+`tox.ini`, `manage.py`, `wsgi.py` or `app.py`), Go (`go.mod`) and Vim plugin
+projects work out of the box.
 
 **Vim or Neovim:** tested on Vim 9.1 and newer. It's plain Vimscript, so it may
 work on Neovim, but that's untested.
@@ -31,23 +31,14 @@ The project is detected once, from the directory Vim starts in or above it.
 | `project_detect#sources()` | Where the code lives, relative to the root. |
 | `project_detect#tests()` | Where the tests live, relative to the root. |
 | `project_detect#is_test([file])` | Whether a file is one of the tests. |
-| `project_detect#runner(language)` | How its tests run: `{'run': …, 'debug': …}`. |
 
-Set `g:project_name`, for example in a project's `.vim.custom`, to use it in
-place of detecting a name. It's enough to make the directory a project, with
-tests in `tests/` or `test/`. It's the folder to search, at the root or in
-`src/`: Vim shows an error at startup if there's no such folder.
+Set `g:project_name` to use it in place of detecting a name. It's enough to make
+the directory a project, with tests in `tests/` or `test/`. In that project, and
+in a Python one, it's the folder to search, at the root or in `src/`: Vim shows
+an error at startup if there's no such folder.
 
 A directory with more than one language shows an error at startup and is
 treated as no project, whatever its name.
-
-Set the test commands for a language:
-
-```vim
-let g:project_detect_runners = {
-      \ 'python': {'run': 'chkpyt.sh', 'debug': 'chkpyt.sh --no-default-addopts'},
-      \ }
-```
 
 Add another project type with
 `project_detect#register(name, {'detect': function('s:detect')})`. `detect()`
