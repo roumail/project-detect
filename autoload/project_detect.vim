@@ -7,6 +7,8 @@ function! project_detect#register(name, strategy) abort
     call add(s:order, a:name)
   endif
   let s:strategies[a:name] = a:strategy
+  " A built-in it replaces no longer counts towards more than one language
+  call filter(s:signs, 'v:key !=# a:name')
   if s:detected && empty(s:active)
     call s:detect()
   endif
@@ -86,7 +88,12 @@ endfunction
 
 function! s:detect() abort
   let s:detected = 1
-  for l:key in s:order
+  let l:languages = sort(filter(keys(s:signs), '!empty(s:signs[v:val]())'))
+  if len(l:languages) > 1
+    call s:error('more than one language here (' . join(l:languages, ', ') . '): no project detected')
+    return
+  endif
+  for l:key in s:order + ['declared']
     let l:found = s:strategies[l:key].detect()
     if empty(l:found)
       continue
@@ -120,32 +127,68 @@ function! s:existing_dirs(root, dirs) abort
   return map(filter(copy(a:dirs), 'isdirectory(a:root . "/" . v:val)'), 'v:val . "/"')
 endfunction
 
-function! s:python() abort
-  let l:file = s:find_up('pyproject.toml')
-  if empty(l:file)
-    return ''
+function! s:package_dirs(name) abort
+  " my-project is imported as my_project
+  let l:import = substitute(tolower(a:name), '[-.]\+', '_', 'g')
+  return ['src/' . l:import, 'src/' . a:name, l:import, a:name]
+endfunction
+
+" The folders g:project_name names. It says what to search, so none is an error
+function! s:named_folders(root) abort
+  let l:name = get(g:, 'project_name', '')
+  let l:folders = s:existing_dirs(a:root, s:package_dirs(l:name))
+  if empty(l:folders)
+    call s:error('no folder for g:project_name "' . l:name . '" in ' . fnamemodify(a:root, ':~'))
   endif
-  let l:name = ''
+  return l:folders
+endfunction
+
+function! s:error(message) abort
+  echohl ErrorMsg
+  echomsg 'project-detect: ' . a:message
+  echohl None
+endfunction
+
+" Strongest first: a requirements.txt can sit in a docs/ below a setup.py
+let s:python_files = ['pyproject.toml', 'setup.py', 'setup.cfg', 'Pipfile',
+      \ 'requirements.txt', 'tox.ini', 'manage.py', 'wsgi.py', 'app.py']
+
+function! s:python_file() abort
+  for l:name in s:python_files
+    let l:file = s:find_up(l:name)
+    if !empty(l:file)
+      return l:file
+    endif
+  endfor
+  return ''
+endfunction
+
+function! s:pyproject_name(root) abort
+  let l:file = a:root . '/pyproject.toml'
   let l:section = ''
-  for l:line in readfile(l:file)
+  for l:line in filereadable(l:file) ? readfile(l:file) : []
     if l:line =~# '^\s*\['
       let l:section = matchstr(l:line, '^\s*\[\+\s*\zs[^]]\{-}\ze\s*\]')
     elseif l:section =~# '^\%(project\|tool\.poetry\)$' && l:line =~# '^\s*name\s*='
-      let l:name = matchstr(l:line, '^\s*name\s*=\s*[''"]\zs[^''"]\+')
-      break
+      return matchstr(l:line, '^\s*name\s*=\s*[''"]\zs[^''"]\+')
     endif
   endfor
+  return ''
+endfunction
 
+function! s:python() abort
+  let l:file = s:python_file()
+  if empty(l:file)
+    return ''
+  endif
   let l:root = fnamemodify(l:file, ':h')
-  let l:candidates = []
-  for l:declared in filter([l:name, get(g:, 'project_name', '')], '!empty(v:val)')
-    " my-project is imported as my_project
-    let l:import = substitute(tolower(l:declared), '[-.]\+', '_', 'g')
-    for l:dir in ['src/', '']
-      let l:candidates += [l:dir . l:import, l:dir . l:declared]
-    endfor
-  endfor
-  let l:packages = s:existing_dirs(l:root, l:candidates)
+  let l:name = get(g:, 'project_name', '')
+  if empty(l:name)
+    let l:name = s:pyproject_name(l:root)
+    let l:packages = empty(l:name) ? [] : s:existing_dirs(l:root, s:package_dirs(l:name))
+  else
+    let l:packages = s:named_folders(l:root)
+  endif
   if empty(l:packages) && filereadable(l:root . '/src/__init__.py')
     let l:packages = ['src/']
   endif
@@ -199,11 +242,11 @@ endfunction
 
 " A directory with Vim script in plugin/ or autoload/, from the working
 " directory upwards
-function! s:vim() abort
+function! s:vim_root() abort
   let l:dir = getcwd()
   while 1
     if !empty(glob(l:dir . '/plugin/*.vim', 1, 1)) || !empty(glob(l:dir . '/autoload/**/*.vim', 1, 1))
-      break
+      return l:dir
     endif
     let l:parent = fnamemodify(l:dir, ':h')
     if l:parent ==# l:dir
@@ -211,6 +254,13 @@ function! s:vim() abort
     endif
     let l:dir = l:parent
   endwhile
+endfunction
+
+function! s:vim() abort
+  let l:dir = s:vim_root()
+  if empty(l:dir)
+    return ''
+  endif
   return {
         \ 'name': fnamemodify(l:dir, ':t'),
         \ 'root': l:dir,
@@ -221,12 +271,32 @@ function! s:vim() abort
         \ }
 endfunction
 
+" Nothing recognised the project: g:project_name alone makes one
+function! s:declared() abort
+  if empty(get(g:, 'project_name', ''))
+    return ''
+  endif
+  return {
+        \ 'name': g:project_name,
+        \ 'sources': s:named_folders(getcwd())[:0],
+        \ 'tests': s:existing_dirs(getcwd(), ['tests', 'test']),
+        \ }
+endfunction
+
 " Added directly: register() would detect again
 let s:order = ['python', 'go', 'vim']
 let s:strategies = {
       \ 'python': {'detect': function('s:python')},
       \ 'go': {'detect': function('s:go')},
       \ 'vim': {'detect': function('s:vim')},
+      \ 'declared': {'detect': function('s:declared')},
+      \ }
+
+" What says a project is in that language, whether or not it has a name
+let s:signs = {
+      \ 'python': function('s:python_file'),
+      \ 'go': {-> s:find_up('go.mod')},
+      \ 'vim': function('s:vim_root'),
       \ }
 
 let s:runners = {
