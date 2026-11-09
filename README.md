@@ -31,30 +31,21 @@ The project is detected once, from the directory Vim starts in or above it.
 | `project_detect#active()` | The project type, or `''`. |
 | `project_detect#name()` | The project name, or `''`. |
 | `project_detect#root()` | The project root. |
-| `project_detect#parts()` | One entry per language: its `language`, and its `sources` and `tests` relative to the root. |
+| `project_detect#parts()` | One entry per language: its `language`, `sources` and `tests`. |
 | `project_detect#part([file])` | The part a file belongs to, or `{}`. |
 | `project_detect#is_test([file])` | Whether a file is one of its part's tests. |
 
-A file belongs to the part whose `sources` or `tests` directory holds it, the
-longest match first, and otherwise to the part of its extension. So Python test
-data under a Rust crate is the crate's. A project of one language has one part,
-and every file is in it.
-
-The type and name are the first language's that has them, in the order Python,
-Go, Rust, Vim, then any you add. A Python or Rust project with no name of its own
-is named after its directory, if Vim started there.
+A Python or Rust project with no name of its own is named after its directory.
 
 Set `g:project_name` to use it in place of detecting a name. It's enough to make
 the directory a project, with tests in `tests/` or `test/`. In that project, and
-in a Python one that doesn't set maturin's `python-source` and `module-name`,
-it's the folder to search, at the root or in `src/`: Vim shows an error at
-startup if there's no such folder.
+in a Python one without maturin's `python-source`, it's the folder to search, at
+the root or in `src/`: Vim shows an error at startup if there's no such folder.
 
 Add another project type with
 `project_detect#register(name, {'detect': function('s:detect')})`. `detect()`
 returns `''` when it isn't that kind of project, else the project name or a dict
-with `name` and any of `root`, `language`, `sources` and `tests`. It becomes a
-part alongside any others found.
+with `name` and any of `root`, `language`, `sources` and `tests`.
 
 ## Tests
 
